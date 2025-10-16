@@ -2821,24 +2821,28 @@ app.get("/api/prescription-medicines/latest/:patientId", async (req, res) => {
 
     const latestDate = latestResults[0].latest_date;
 
-    // Then get all medicines from the latest prescription
+    // Then get all medicines from the latest prescription with medicine name
     // Check both patientID and userID fields
     const medicinesQuery = `
       SELECT 
-        id,
-        prescription_id,
-        patientID,
-        userID,
-        medicine_id,
-        dosage,
-        frequency,
-        duration,
-        instructions,
-        created_at,
-        updated_at
-      FROM prescription_medicine 
-      WHERE (patientID = ? OR userID = ?) AND DATE(created_at) = DATE(?)
-      ORDER BY medicine_id
+        pm.id,
+        pm.prescription_id,
+        pm.patientID,
+        pm.userID,
+        pm.medicine_id,
+        pm.dosage,
+        pm.frequency,
+        pm.duration,
+        pm.instructions,
+        pm.created_at,
+        pm.updated_at,
+        m.name as medicine_name,
+        m.generic_name,
+        m.category
+      FROM prescription_medicine pm
+      LEFT JOIN medicines m ON pm.medicine_id = m.id
+      WHERE (pm.patientID = ? OR pm.userID = ?) AND DATE(pm.created_at) = DATE(?)
+      ORDER BY m.name
     `;
 
     const [medicines] = await connection.execute(medicinesQuery, [
