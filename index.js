@@ -2670,24 +2670,32 @@ app.get("/api/treatments/fluid-balance-analysis/:userID", async (req, res) => {
     // Get treatments with fluid balance data
     const [treatments] = await pool.query(
       `SELECT 
-        t.Treatment_ID, 
-        t.Balances, 
-        t.treatmentDate,
-        t.TreatmentStatus,
-        i.VolumeIn, 
-        o.VolumeOut,
-        o.Color,
-        o.Notes,
-        (i.VolumeIn - o.VolumeOut) as calculatedBalance
-       FROM treatment t
-       LEFT JOIN insolution i ON t.IN_ID = i.IN_ID
-       LEFT JOIN outsolution o ON t.OUT_ID = o.OUT_ID
-       WHERE t.patientID = ?
-         AND t.treatmentDate IS NOT NULL
-         AND i.VolumeIn IS NOT NULL
-         AND o.VolumeOut IS NOT NULL
-       ORDER BY t.treatmentDate DESC
-       LIMIT 30`,
+  t.Treatment_ID, 
+  t.Balances, 
+  t.treatmentDate,
+  t.TreatmentStatus,
+  i.VolumeIn, 
+  o.VolumeOut,
+  o.Color,
+  o.Notes,
+  (i.VolumeIn - o.VolumeOut) as calculatedBalance,
+  -- Normalize color values in the query
+  CASE 
+    WHEN LOWER(o.Color) LIKE '%red%' OR LOWER(o.Color) LIKE '%hugas isda%' THEN 'red'
+    WHEN LOWER(o.Color) LIKE '%yellow%' OR LOWER(o.Color) LIKE '%pineapple%' THEN 'yellow'
+    WHEN LOWER(o.Color) LIKE '%cloudy%' OR LOWER(o.Color) LIKE '%hugas bigas%' THEN 'cloudy'
+    WHEN LOWER(o.Color) LIKE '%clear%' THEN 'clear'
+    ELSE LOWER(o.Color)
+  END as normalizedColor
+ FROM treatment t
+ LEFT JOIN insolution i ON t.IN_ID = i.IN_ID
+ LEFT JOIN outsolution o ON t.OUT_ID = o.OUT_ID
+ WHERE t.patientID = ?
+   AND t.treatmentDate IS NOT NULL
+   AND i.VolumeIn IS NOT NULL
+   AND o.VolumeOut IS NOT NULL
+ ORDER BY t.treatmentDate DESC
+ LIMIT 30`,
       [patientID]
     );
 
@@ -3019,5 +3027,6 @@ app.listen(PORT, "0.0.0.0", () => {
   console.log(`✅ Server running on http://0.0.0.0:${PORT}`);
   console.log(`✅Connected to Cloud SQL`);
 });
+
 
 
