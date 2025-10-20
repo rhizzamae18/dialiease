@@ -2714,7 +2714,7 @@ app.get("/api/treatments/fluid-balance-analysis/:userID", async (req, res) => {
         description: "Blood-tinged - May indicate bleeding or infection",
         recommendation:
           "Monitor closely and if persists go to the emergency department immediately",
-        severity: 3,
+        severity: 4,
       },
       yellow: {
         riskLevel: "medium-high",
@@ -3019,4 +3019,5 @@ app.listen(PORT, "0.0.0.0", () => {
   console.log(`✅ Server running on http://0.0.0.0:${PORT}`);
   console.log(`✅Connected to Cloud SQL`);
 });
+
 
