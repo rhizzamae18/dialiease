@@ -2676,6 +2676,8 @@ app.get("/api/treatments/fluid-balance-analysis/:userID", async (req, res) => {
         t.TreatmentStatus,
         i.VolumeIn, 
         o.VolumeOut,
+        o.Color,
+        o.Notes,
         (i.VolumeIn - o.VolumeOut) as calculatedBalance
        FROM treatment t
        LEFT JOIN insolution i ON t.IN_ID = i.IN_ID
@@ -2693,7 +2695,36 @@ app.get("/api/treatments/fluid-balance-analysis/:userID", async (req, res) => {
       `Found ${treatments.length} treatments with fluid data for patient ${patientID}`
     );
 
-    // Add balance interpretation with CORRECT formula
+    // Color analysis configuration
+    const colorAnalysis = {
+      clear: {
+        riskLevel: "low",
+        description: "Normal - No signs of infection",
+        recommendation: "Continue current care routine",
+        severity: 1,
+      },
+      cloudy: {
+        riskLevel: "medium-low",
+        description: "Fibrins - Cloudy fluid may indicate fibrins",
+        recommendation: "Continue current routine",
+        severity: 2,
+      },
+      red: {
+        riskLevel: "high",
+        description: "Blood-tinged - May indicate bleeding or infection",
+        recommendation:
+          "Monitor closely and if persists go to the emergency department immediately",
+        severity: 3,
+      },
+      yellow: {
+        riskLevel: "medium-high",
+        description: "Abnormal color - Possible infection or other issues",
+        recommendation: "Consider getting laboratory for evaluation",
+        severity: 3,
+      },
+    };
+
+    // Add balance interpretation AND color analysis
     const treatmentsWithAnalysis = treatments.map((treatment) => {
       // Use calculated balance: VolumeIn - VolumeOut
       const balance = parseFloat(treatment.calculatedBalance) || 0;
@@ -2715,6 +2746,15 @@ app.get("/api/treatments/fluid-balance-analysis/:userID", async (req, res) => {
         status = "unknown";
       }
 
+      // Color analysis
+      const fluidColor = (treatment.Color || "").toLowerCase().trim();
+      const colorInfo = colorAnalysis[fluidColor] || {
+        riskLevel: "unknown",
+        description: "Color not recognized",
+        recommendation: "Consult healthcare provider",
+        severity: 2,
+      };
+
       return {
         ...treatment,
         balance: balance,
@@ -2722,10 +2762,20 @@ app.get("/api/treatments/fluid-balance-analysis/:userID", async (req, res) => {
         status,
         formulaUsed: "Balance = VolumeIn - VolumeOut",
         calculation: `${treatment.VolumeIn} - ${treatment.VolumeOut} = ${balance}`,
+
+        // Color analysis data
+        colorAnalysis: {
+          color: fluidColor,
+          riskLevel: colorInfo.riskLevel,
+          description: colorInfo.description,
+          recommendation: colorInfo.recommendation,
+          severity: colorInfo.severity,
+          hasInfectionRisk: colorInfo.riskLevel !== "low",
+        },
       };
     });
 
-    // Calculate monthly statistics
+    // Calculate monthly statistics for BOTH fluid balance AND color analysis
     const currentMonth = new Date().getMonth();
     const currentYear = new Date().getFullYear();
 
@@ -2745,11 +2795,40 @@ app.get("/api/treatments/fluid-balance-analysis/:userID", async (req, res) => {
       (treatment) => treatment.balance > 0
     );
 
+    // Count treatments with infection risk based on color
+    const treatmentsWithInfectionRisk = currentMonthTreatments.filter(
+      (treatment) => treatment.colorAnalysis.hasInfectionRisk
+    );
+
+    // Count by color type
+    const colorCounts = {
+      clear: 0,
+      cloudy: 0,
+      red: 0,
+      yellow: 0,
+      unknown: 0,
+    };
+
+    currentMonthTreatments.forEach((treatment) => {
+      const color = treatment.colorAnalysis.color;
+      if (colorCounts.hasOwnProperty(color)) {
+        colorCounts[color]++;
+      } else {
+        colorCounts.unknown++;
+      }
+    });
+
     const totalTreatments = currentMonthTreatments.length;
     const fluidRetentionCount = treatmentsWithFluidRetention.length;
     const fluidRetentionPercentage =
       totalTreatments > 0
         ? Math.round((fluidRetentionCount / totalTreatments) * 100)
+        : 0;
+
+    const infectionRiskCount = treatmentsWithInfectionRisk.length;
+    const infectionRiskPercentage =
+      totalTreatments > 0
+        ? Math.round((infectionRiskCount / totalTreatments) * 100)
         : 0;
 
     res.json({
@@ -2759,6 +2838,9 @@ app.get("/api/treatments/fluid-balance-analysis/:userID", async (req, res) => {
         totalTreatments,
         fluidRetentionCount,
         fluidRetentionPercentage,
+        infectionRiskCount,
+        infectionRiskPercentage,
+        colorCounts,
         treatments: currentMonthTreatments,
       },
       formula: "Balance = VolumeIn - VolumeOut",
@@ -2767,10 +2849,13 @@ app.get("/api/treatments/fluid-balance-analysis/:userID", async (req, res) => {
         negative: "Good fluid removal (VolumeIn < VolumeOut)",
         zero: "Balanced (VolumeIn = VolumeOut)",
       },
+      colorInterpretation: colorAnalysis,
       summary: {
         totalTreatmentsFound: treatments.length,
         currentMonthTreatments: totalTreatments,
         treatmentsWithFluidRetention: fluidRetentionCount,
+        treatmentsWithInfectionRisk: infectionRiskCount,
+        colorDistribution: colorCounts,
       },
     });
   } catch (error) {
@@ -2934,3 +3019,4 @@ app.listen(PORT, "0.0.0.0", () => {
   console.log(`✅ Server running on http://0.0.0.0:${PORT}`);
   console.log(`✅Connected to Cloud SQL`);
 });
+
