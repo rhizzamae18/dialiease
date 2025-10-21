@@ -2563,34 +2563,54 @@ app.get("/api/treatments/balance-analysis/:patientID", async (req, res) => {
 });
 // Enhanced prescription medicines endpoint with better error handling
 // Enhanced API endpoint to get prescription medicines with details
-app.get("/api/prescription-medicines/latest/:userId", async (req, res) => {
+app.get("/api/prescription-medicines/latest/:patientId", async (req, res) => {
+  let connection;
   try {
-    const { patientID } = req.params;
+    const { patientId } = req.params;
 
-    console.log(
-      `📋 Fetching prescription medicines for patient ID: ${patientID}`
-    );
-
-    // Check if patient exists
-    const [patientCheck] = await pool.query(
-      "SELECT patientID FROM patients WHERE patientID = ?",
-      [patientID]
-    );
-
-    if (patientCheck.length === 0) {
-      return res.status(404).json({
+    if (!patientId) {
+      return res.status(400).json({
         success: false,
-        error: "Patient not found",
+        message: "Patient ID is required",
       });
     }
 
-    // Enhanced query with joins for medicine and doctor details
-    const query = `
+    // Get connection from pool
+    connection = await pool.getConnection();
+
+    // First, get the latest prescription date for this patient
+    // Check both patientID and userID fields
+    const latestPrescriptionQuery = `
+      SELECT MAX(created_at) as latest_date 
+      FROM prescription_medicine 
+      WHERE patientID = ? OR userID = ?
+    `;
+
+    const [latestResults] = await connection.execute(latestPrescriptionQuery, [
+      patientId,
+      patientId, // pass patientId twice for both conditions
+    ]);
+
+    if (!latestResults[0] || !latestResults[0].latest_date) {
+      return res.json({
+        success: true,
+        medicines: [],
+        latestDate: null,
+        message: "No prescriptions found for this patient",
+      });
+    }
+
+    const latestDate = latestResults[0].latest_date;
+
+    // Then get all medicines from the latest prescription with medicine name
+    // Check both patientID and userID fields
+    const medicinesQuery = `
       SELECT 
         pm.id,
         pm.prescription_id,
         pm.patientID,
-        pm.userID as doctor_id,
+        pm.userID,
+        pm.doctor_userID
         pm.medicine_id,
         pm.dosage,
         pm.frequency,
@@ -2598,52 +2618,38 @@ app.get("/api/prescription-medicines/latest/:userId", async (req, res) => {
         pm.instructions,
         pm.created_at,
         pm.updated_at,
-        -- Medicine details
         m.name as medicine_name,
-        m.form as medicine_form,
-        m.category as medicine_category,
-        -- Doctor details
-        u.first_name as doctor_first_name,
-        u.middle_name as doctor_middle_name,
-        u.last_name as doctor_last_name,
-        u.specialization as doctor_specialization
+        m.generic_name,
+        m.category
       FROM prescription_medicine pm
-      LEFT JOIN medicines m ON pm.medicine_id = m.medicine_id
-      LEFT JOIN users u ON pm.userID = u.userID
-      WHERE pm.patientID = ?
-      ORDER BY pm.created_at DESC
+      LEFT JOIN medicines m ON pm.medicine_id = m.id
+      WHERE (pm.patientID = ? OR pm.userID = ?) AND DATE(pm.created_at) = DATE(?)
+      ORDER BY m.name
     `;
 
-    const [results] = await pool.execute(query, [patientID]);
+    const [medicines] = await connection.execute(medicinesQuery, [
+      patientId,
+      patientId, // pass patientId twice for both conditions
+      latestDate,
+    ]);
 
-    console.log(`✅ Found ${results.length} prescription medicines`);
-
-    res.json(results);
+    res.json({
+      success: true,
+      medicines: medicines,
+      latestDate: latestDate,
+      message: `Found ${medicines.length} medicines in latest prescription`,
+    });
   } catch (error) {
-    console.error("❌ Error fetching prescription medicines:", error);
-
-    // Fallback to basic query if joins fail
-    if (error.code === "ER_NO_SUCH_TABLE") {
-      try {
-        console.log("⚠️ Using fallback query without joins");
-        const fallbackQuery = `
-          SELECT * FROM prescription_medicine 
-          WHERE patientID = ? 
-          ORDER BY created_at DESC
-        `;
-        const [fallbackResults] = await pool.execute(fallbackQuery, [
-          patientID,
-        ]);
-        return res.json(fallbackResults);
-      } catch (fallbackError) {
-        console.error("❌ Fallback query also failed:", fallbackError);
-      }
-    }
-
+    console.error("Error fetching latest prescription medicines:", error);
     res.status(500).json({
       success: false,
-      error: error.message,
+      message: "Internal server error",
     });
+  } finally {
+    // Release connection back to pool
+    if (connection) {
+      connection.release();
+    }
   }
 });
 // Corrected endpoint for fluid balance analysis
@@ -2996,6 +3002,7 @@ app.listen(PORT, "0.0.0.0", () => {
   console.log(`✅ Server running on http://0.0.0.0:${PORT}`);
   console.log(`✅Connected to Cloud SQL`);
 });
+
 
 
 
