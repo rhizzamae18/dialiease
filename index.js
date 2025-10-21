@@ -2887,23 +2887,28 @@ app.get("/api/prescription-medicines/latest/:patientId", async (req, res) => {
       });
     }
 
+    console.log(`Fetching latest prescription for patient: ${patientId}`);
+
     // Get connection from pool
     connection = await pool.getConnection();
 
     // First, get the latest prescription date for this patient
-    // Check both patientID and userID fields
     const latestPrescriptionQuery = `
       SELECT MAX(created_at) as latest_date 
       FROM prescription_medicine 
       WHERE patientID = ? OR userID = ?
     `;
 
+    console.log('Executing latest prescription query...');
     const [latestResults] = await connection.execute(latestPrescriptionQuery, [
       patientId,
-      patientId, // pass patientId twice for both conditions
+      patientId,
     ]);
 
+    console.log('Latest results:', latestResults);
+
     if (!latestResults[0] || !latestResults[0].latest_date) {
+      console.log('No prescriptions found for patient:', patientId);
       return res.json({
         success: true,
         medicines: [],
@@ -2913,9 +2918,10 @@ app.get("/api/prescription-medicines/latest/:patientId", async (req, res) => {
     }
 
     const latestDate = latestResults[0].latest_date;
+    console.log('Latest prescription date:', latestDate);
 
-    // Then get all medicines from the latest prescription with medicine name
-    // Check both patientID and userID fields
+    // Then get all medicines from the latest prescription
+    // Using a more reliable date comparison
     const medicinesQuery = `
       SELECT 
         pm.id,
@@ -2929,20 +2935,24 @@ app.get("/api/prescription-medicines/latest/:patientId", async (req, res) => {
         pm.instructions,
         pm.created_at,
         pm.updated_at,
-        m.name as medicine_name,
-        m.generic_name,
-        m.category
+        COALESCE(m.name, 'Unknown Medicine') as medicine_name,
+        COALESCE(m.generic_name, '') as generic_name,
+        COALESCE(m.category, '') as category
       FROM prescription_medicine pm
       LEFT JOIN medicines m ON pm.medicine_id = m.id
-      WHERE (pm.patientID = ? OR pm.userID = ?) AND DATE(pm.created_at) = DATE(?)
-      ORDER BY m.name
+      WHERE (pm.patientID = ? OR pm.userID = ?) 
+        AND DATE(pm.created_at) = DATE(?)
+      ORDER BY COALESCE(m.name, pm.medicine_id)
     `;
 
+    console.log('Executing medicines query...');
     const [medicines] = await connection.execute(medicinesQuery, [
       patientId,
-      patientId, // pass patientId twice for both conditions
+      patientId,
       latestDate,
     ]);
+
+    console.log(`Found ${medicines.length} medicines`);
 
     res.json({
       success: true,
@@ -2950,16 +2960,19 @@ app.get("/api/prescription-medicines/latest/:patientId", async (req, res) => {
       latestDate: latestDate,
       message: `Found ${medicines.length} medicines in latest prescription`,
     });
+
   } catch (error) {
     console.error("Error fetching latest prescription medicines:", error);
     res.status(500).json({
       success: false,
-      message: "Internal server error",
+      message: "Internal server error: " + error.message,
+      error: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   } finally {
     // Release connection back to pool
     if (connection) {
       connection.release();
+      console.log('Database connection released');
     }
   }
 });
@@ -3027,6 +3040,7 @@ app.listen(PORT, "0.0.0.0", () => {
   console.log(`✅ Server running on http://0.0.0.0:${PORT}`);
   console.log(`✅Connected to Cloud SQL`);
 });
+
 
 
 
