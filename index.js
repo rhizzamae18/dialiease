@@ -2893,10 +2893,11 @@ app.get("/api/prescription-medicines/latest/:patientId", async (req, res) => {
     connection = await pool.getConnection();
 
     // First, get the latest prescription date for this patient
+    // Using the correct column names from your table
     const latestPrescriptionQuery = `
       SELECT MAX(created_at) as latest_date 
       FROM prescription_medicine 
-      WHERE patientID = ? OR userID = ?
+      WHERE patientID = ? OR patient_userID = ?
     `;
 
     console.log('Executing latest prescription query...');
@@ -2921,13 +2922,13 @@ app.get("/api/prescription-medicines/latest/:patientId", async (req, res) => {
     console.log('Latest prescription date:', latestDate);
 
     // Then get all medicines from the latest prescription
-    // Using a more reliable date comparison
+    // Using the correct column names
     const medicinesQuery = `
       SELECT 
-        pm.id,
         pm.prescription_id,
         pm.patientID,
-        pm.userID,
+        pm.patient_userID,
+        pm.doctor_userID,
         pm.medicine_id,
         pm.dosage,
         pm.frequency,
@@ -2940,7 +2941,7 @@ app.get("/api/prescription-medicines/latest/:patientId", async (req, res) => {
         COALESCE(m.category, '') as category
       FROM prescription_medicine pm
       LEFT JOIN medicines m ON pm.medicine_id = m.id
-      WHERE (pm.patientID = ? OR pm.userID = ?) 
+      WHERE (pm.patientID = ? OR pm.patient_userID = ?) 
         AND DATE(pm.created_at) = DATE(?)
       ORDER BY COALESCE(m.name, pm.medicine_id)
     `;
@@ -2989,15 +2990,14 @@ app.get("/api/prescription-medicines/patient/:patientId", async (req, res) => {
       });
     }
 
-    // Get connection from pool
     connection = await pool.getConnection();
 
     const query = `
       SELECT 
-        id,
         prescription_id,
         patientID,
-        userID,
+        patient_userID,
+        doctor_userID,
         medicine_id,
         dosage,
         frequency,
@@ -3006,14 +3006,14 @@ app.get("/api/prescription-medicines/patient/:patientId", async (req, res) => {
         created_at,
         updated_at
       FROM prescription_medicine 
-      WHERE patientID = ? OR userID = ?
+      WHERE patientID = ? OR patient_userID = ?
       ORDER BY created_at DESC
       LIMIT ?
     `;
 
     const [medicines] = await connection.execute(query, [
       patientId,
-      patientId, // pass patientId twice for both conditions
+      patientId,
       parseInt(limit),
     ]);
 
@@ -3029,7 +3029,6 @@ app.get("/api/prescription-medicines/patient/:patientId", async (req, res) => {
       message: "Internal server error",
     });
   } finally {
-    // Release connection back to pool
     if (connection) {
       connection.release();
     }
@@ -3040,6 +3039,7 @@ app.listen(PORT, "0.0.0.0", () => {
   console.log(`✅ Server running on http://0.0.0.0:${PORT}`);
   console.log(`✅Connected to Cloud SQL`);
 });
+
 
 
 
