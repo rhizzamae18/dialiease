@@ -2610,7 +2610,6 @@ app.get("/api/prescription-medicines/latest/:patientId", async (req, res) => {
         pm.prescription_id,
         pm.patientID,
         pm.userID,
-        pm.doctor_userID
         pm.medicine_id,
         pm.dosage,
         pm.frequency,
@@ -3002,6 +3001,7 @@ app.listen(PORT, "0.0.0.0", () => {
   console.log(`✅ Server running on http://0.0.0.0:${PORT}`);
   console.log(`✅Connected to Cloud SQL`);
 });
+
 
 
 
