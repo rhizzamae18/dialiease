@@ -2563,7 +2563,7 @@ app.get("/api/treatments/balance-analysis/:patientID", async (req, res) => {
 });
 // Enhanced prescription medicines endpoint with better error handling
 // Enhanced API endpoint to get prescription medicines with details
-app.get("/api/prescription-medicines/patient/:patientID", async (req, res) => {
+app.get("/api/prescription-medicines/latest/:userId", async (req, res) => {
   try {
     const { patientID } = req.params;
 
